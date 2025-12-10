@@ -10,6 +10,9 @@ void AEOS_PlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AEOS_PlayerState, CurrentTeam);
+    DOREPLIFETIME(AEOS_PlayerState, PlayerKills);
+    DOREPLIFETIME(AEOS_PlayerState, PlayerDeath);
+    DOREPLIFETIME(AEOS_PlayerState, isDead);
     // DOREPLIFETIME(AEOS_PlayerState, DesiredPawnClass);
 }
 
@@ -25,6 +28,30 @@ void AEOS_PlayerState::SetTeam(ETeam NewTeam)
         {
             OnRep_CurrentTeam();
         }
+    }
+}
+
+void AEOS_PlayerState::AddKill()
+{
+    if (HasAuthority())
+    {
+        PlayerKills++;
+    }
+}
+
+void AEOS_PlayerState::AddDeath()
+{
+    if (HasAuthority())
+    {
+        PlayerDeath++;
+    }
+}
+
+void AEOS_PlayerState::ChangeDeadState(bool NEWHEARTBEATSTATUS)
+{
+    if (HasAuthority())
+    {
+        isDead = NEWHEARTBEATSTATUS;
     }
 }
 

@@ -26,6 +26,10 @@ FString AEOS_GameMode::InitNewPlayer(APlayerController* NewPlayerController, con
         AEOS_PlayerState* PS = NewPlayerController->GetPlayerState<AEOS_PlayerState>();
         if (PS)
         {
+            PS->PlayerKills = 0;
+            PS->PlayerDeath = 0;
+            PS->isDead = false;
+
             if (FoundClass && *FoundClass)
             {
                 PS->DesiredPawnClass = *FoundClass;
