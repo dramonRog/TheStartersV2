@@ -139,23 +139,36 @@ void ABaseCharacter::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 }
 
-void ABaseCharacter::LeaveSession(FName SessionName)
+void ABaseCharacter::LeaveSession()
 {
     IOnlineSubsystem* Subsystem = Online::GetSubsystem(GetWorld());
     if (!Subsystem) return;
 
     IOnlineSessionPtr Session = Subsystem->GetSessionInterface();
     if (!Session.IsValid()) return;
+    
+    UEOS_GameInstance* GameInstanceRef = Cast<UEOS_GameInstance>(GetWorld()->GetGameInstance());
 
-    DestroySessionDelegateHandle = Session->AddOnDestroySessionCompleteDelegate_Handle(
-        FOnEndSessionCompleteDelegate::CreateUObject(this, &ThisClass::HandleDestroySessionCompleted));
+    if (GameInstanceRef->CurrentSession.SessionResult.IsValid()) {
+        FName sessionName = FName(GameInstanceRef->CurrentSession.SessionResult.GetSessionIdStr());
 
-    // Remove the session locally so it�s no longer referenced.
-    if (!Session->DestroySession(SessionName))
+        DestroySessionDelegateHandle = Session->AddOnDestroySessionCompleteDelegate_Handle(
+            FOnEndSessionCompleteDelegate::CreateUObject(this, &ThisClass::HandleDestroySessionCompleted));
+
+        // Remove the session locally so its no longer referenced.
+        if (!Session->DestroySession(sessionName))
+        {
+            UE_LOG(LogTemp, Error, TEXT("Failed to destroy session locally."));
+            Session->ClearOnEndSessionCompleteDelegate_Handle(DestroySessionDelegateHandle);
+            DestroySessionDelegateHandle.Reset();
+        }
+    }
+    
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    
+    if (PC)
     {
-        UE_LOG(LogTemp, Error, TEXT("Failed to destroy session locally."));
-        Session->ClearOnEndSessionCompleteDelegate_Handle(DestroySessionDelegateHandle);
-        DestroySessionDelegateHandle.Reset();
+        PC->ClientTravel(TEXT("/Game/Maps/MainMenu"), TRAVEL_Absolute);
     }
 }
 
@@ -275,22 +288,6 @@ void ABaseCharacter::SpecialAbility(const FInputActionValue& Value)
             GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("SpecialAbility: Client UniqueNetId is INVALID."));
         }
     }*/
-
-    //UEOS_GameInstance* GameInstanceRef = Cast<UEOS_GameInstance>(GetWorld()->GetGameInstance());
-
-    //if (!GameInstanceRef->CurrentSession.SessionResult.IsValid()) {
-    //    UE_LOG(LogTemp, Error, TEXT("Session in GameInstance is invalid!"));
-    //    return;
-    //}
-    //FName sessionName = FName(GameInstanceRef->CurrentSession.SessionResult.GetSessionIdStr());
-
-    //// LeaveSession(sessionName);
-    //LeaveSession(sessionName);
-
-    //if (PC)
-    //{
-    //    PC->ClientTravel(TEXT("/Game/Maps/MainMenu"), TRAVEL_Absolute);
-    //}
 }
 
 void ABaseCharacter::Look(const FInputActionValue& Value)

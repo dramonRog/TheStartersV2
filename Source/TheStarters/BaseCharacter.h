@@ -49,7 +49,9 @@ public:
     ABaseCharacter();
 
     virtual void Tick(float DeltaTime) override;
-    void LeaveSession(FName sessionName);
+    
+    UFUNCTION(BlueprintCallable, Category = "Others")
+    void LeaveSession();
    
     // --- TEAM SYSTEM ---
     UFUNCTION(BlueprintCallable, Category = "Team")

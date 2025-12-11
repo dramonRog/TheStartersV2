@@ -28,7 +28,6 @@ FString AEOS_GameMode::InitNewPlayer(APlayerController* NewPlayerController, con
         {
             PS->PlayerKills = 0;
             PS->PlayerDeath = 0;
-            PS->isDead = false;
 
             if (FoundClass && *FoundClass)
             {

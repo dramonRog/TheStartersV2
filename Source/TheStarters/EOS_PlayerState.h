@@ -26,8 +26,7 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_CurrentTeam, BlueprintReadOnly, Category = "Team")
     ETeam CurrentTeam;
 
-    // UPROPERTY(Replicated, BlueprintReadWrite, Category = "Spawning")
-    UPROPERTY(BlueprintReadWrite, Category = "Spawning")
+    UPROPERTY(Replicated, BlueprintReadWrite, Category = "Spawning")
     TSubclassOf<APawn> DesiredPawnClass;
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player info")
@@ -35,9 +34,6 @@ public:
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player info")
     int PlayerDeath = 0;
-
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player info")
-    bool isDead = false;
 
     UFUNCTION(BlueprintCallable, Category = "Team")
     void SetTeam(ETeam NewTeam);
@@ -47,9 +43,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Player Info")
     void AddDeath();
-
-    UFUNCTION(BlueprintCallable, Category = "Player Info")
-    void ChangeDeadState(bool NEWHEARTBEATSTATUS);
 
 protected:
     UFUNCTION()
