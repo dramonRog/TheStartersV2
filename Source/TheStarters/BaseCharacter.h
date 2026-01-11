@@ -21,6 +21,9 @@
 // Team System (enum class ETeam)
 #include "EOS_PlayerState.h"
 
+// Ping types (EStarterPingType, EPingWheelDirection)
+#include "PingTypes.h"
+
 #include "BaseCharacter.generated.h"
 
 // DataTable row used by DT_WeaponList
@@ -60,6 +63,12 @@ public:
     // --- PING SYSTEM ---
     UPROPERTY(EditDefaultsOnly, Category = "Ping")
     TSubclassOf<class APingMarker> PingActorClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Ping|UI")
+    TSubclassOf<class UPingWheelWidget> PingWheelWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Ping|UI")
+    float PingWheelDeadzone = 40.0f;
 
 protected:
     virtual void BeginPlay() override;
@@ -106,11 +115,20 @@ protected:
     void StopSprint(const FInputActionValue& Value);
     void SpecialAbility(const FInputActionValue& Value);
     void Look(const FInputActionValue& Value);
-    void PerformPing(const FInputActionValue& Value);
+    void PingWheelStarted(const FInputActionValue& Value);
+    void PingWheelCompleted(const FInputActionValue& Value);
+    void PingWheelCanceled(const FInputActionValue& Value);
+
+    void TrySpawnPing(EStarterPingType PingType);
+    EPingWheelDirection ComputeWheelDirection(const FVector2D& AccumulatedDelta) const;
+    EStarterPingType DirectionToPingType(EPingWheelDirection Direction) const;
+    void SetWheelDirection(EPingWheelDirection NewDirection);
+    void OpenPingWheelUI();
+    void ClosePingWheelUI();
 
     // Server RPC
     UFUNCTION(Server, Reliable)
-    void Server_SpawnPing(FVector HitLocation, FVector HitNormal, ETeam PingTeam);
+    void Server_SpawnPing(FVector HitLocation, FVector HitNormal, ETeam PingTeam, EStarterPingType PingType);
 
     UFUNCTION(Server, Reliable)
     void Server_SetMoveSpeed(float NewSpeed);
@@ -130,6 +148,14 @@ protected:
     float SprintMultiplier = 2.0f;
 
     bool bIsSprinting = false;
+
+    // --- PING WHEEL STATE (local only) ---
+    bool bPingWheelActive = false;
+    FVector2D PingWheelAccumulatedDelta = FVector2D::ZeroVector;
+    EPingWheelDirection PingWheelDirection = EPingWheelDirection::None;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UPingWheelWidget> PingWheelWidget = nullptr;
 
     FDelegateHandle DestroySessionDelegateHandle;
     void HandleDestroySessionCompleted(FName SessionName, bool bWasSuccessful);

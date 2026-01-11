@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 
 #include "EOS_PlayerState.h"
+#include "PingTypes.h"
 
 #include "PingMarker.generated.h"
 
@@ -21,8 +22,20 @@ public:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Team")
     ETeam TeamID = ETeam::None;
 
+    UPROPERTY(ReplicatedUsing = OnRep_PingType, BlueprintReadOnly, Category = "Ping")
+    EStarterPingType PingType = EStarterPingType::Location;
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Ping")
+    void BP_OnPingTypeChanged(EStarterPingType NewType);
+
     // Override this to filter visibility
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+protected:
+    virtual void BeginPlay() override;
+
+    UFUNCTION()
+    void OnRep_PingType();
 };

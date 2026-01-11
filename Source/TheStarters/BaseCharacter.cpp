@@ -20,6 +20,7 @@
 // Ping logic
 #include "Kismet/KismetSystemLibrary.h" // For LineTrace
 #include "PingMarker.h"
+#include "PingWheelWidget.h"
 
 // Team system
 #include "EOS_PlayerState.h"
@@ -206,7 +207,9 @@ void ABaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
         EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Look);
         EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
         EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-        EnhancedInput->BindAction(PingAction, ETriggerEvent::Started, this, &ABaseCharacter::PerformPing);
+        EnhancedInput->BindAction(PingAction, ETriggerEvent::Started, this, &ABaseCharacter::PingWheelStarted);
+        EnhancedInput->BindAction(PingAction, ETriggerEvent::Completed, this, &ABaseCharacter::PingWheelCompleted);
+        EnhancedInput->BindAction(PingAction, ETriggerEvent::Canceled, this, &ABaseCharacter::PingWheelCanceled);
     }
 }
 
@@ -294,6 +297,14 @@ void ABaseCharacter::Look(const FInputActionValue& Value)
 {
     FVector2D LookAxis = Value.Get<FVector2D>();
 
+    // When ping wheel is active, interpret mouse delta as radial direction input (no camera movement).
+    if (bPingWheelActive)
+    {
+        PingWheelAccumulatedDelta += LookAxis;
+        SetWheelDirection(ComputeWheelDirection(PingWheelAccumulatedDelta));
+        return;
+    }
+
     AddControllerYawInput(LookAxis.X);
     AddControllerPitchInput(LookAxis.Y * -1.f);
 }
@@ -363,10 +374,58 @@ void ABaseCharacter::EquipDefaultWeapon()
 }
 
 /* ================== PING SYSTEM ================== */
-void ABaseCharacter::PerformPing(const FInputActionValue& Value)
+void ABaseCharacter::PingWheelStarted(const FInputActionValue& Value)
+{
+    if (!IsLocallyControlled())
+    {
+        return;
+    }
+
+    bPingWheelActive = true;
+    PingWheelAccumulatedDelta = FVector2D::ZeroVector;
+    SetWheelDirection(EPingWheelDirection::None);
+    OpenPingWheelUI();
+}
+
+void ABaseCharacter::PingWheelCompleted(const FInputActionValue& Value)
+{
+    if (!IsLocallyControlled())
+    {
+        return;
+    }
+
+    const EPingWheelDirection FinalDirection = PingWheelDirection;
+    bPingWheelActive = false;
+    ClosePingWheelUI();
+
+    // Left = cancel
+    if (FinalDirection == EPingWheelDirection::Left || FinalDirection == EPingWheelDirection::None)
+    {
+        return;
+    }
+
+    TrySpawnPing(DirectionToPingType(FinalDirection));
+}
+
+void ABaseCharacter::PingWheelCanceled(const FInputActionValue& Value)
+{
+    if (!IsLocallyControlled())
+    {
+        return;
+    }
+
+    bPingWheelActive = false;
+    SetWheelDirection(EPingWheelDirection::None);
+    ClosePingWheelUI();
+}
+
+void ABaseCharacter::TrySpawnPing(EStarterPingType PingType)
 {
     // We only want the local controller to instigate the ping trace
-    if (!IsLocallyControlled() || !FPCamera) return;
+    if (!IsLocallyControlled() || !FPCamera)
+    {
+        return;
+    }
 
     FVector Start = FPCamera->GetComponentLocation();
     FVector Forward = FPCamera->GetForwardVector();
@@ -377,7 +436,7 @@ void ABaseCharacter::PerformPing(const FInputActionValue& Value)
     QueryParams.AddIgnoredActor(this); // Ignore self
 
     // Perform Line Trace
-    bool bHit = GetWorld()->LineTraceSingleByChannel(
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
         HitResult,
         Start,
         End,
@@ -385,26 +444,101 @@ void ABaseCharacter::PerformPing(const FInputActionValue& Value)
         QueryParams
     );
 
+    ETeam MyTeam = ETeam::None;
+    if (AEOS_PlayerState* MyPS = GetPlayerState<AEOS_PlayerState>())
+    {
+        MyTeam = MyPS->CurrentTeam;
+    }
+
     if (bHit)
     {
-        ETeam myTeam = ETeam::None;
-        AEOS_PlayerState* MyPS = GetPlayerState<AEOS_PlayerState>();
-        if (MyPS)
-        {
-            myTeam = MyPS->CurrentTeam;
-        }
-
-        // Tell the server.
-        Server_SpawnPing(HitResult.Location, HitResult.Normal, myTeam);
+        Server_SpawnPing(HitResult.Location, HitResult.Normal, MyTeam, PingType);
     }
     else
     {
         // Optional: Ping "in the air" at max distance
-        Server_SpawnPing(End, FVector::UpVector, ETeam::None);
+        Server_SpawnPing(End, FVector::UpVector, MyTeam, PingType);
     }
 }
 
-void ABaseCharacter::Server_SpawnPing_Implementation(FVector HitLocation, FVector HitNormal, ETeam PingTeam)
+EPingWheelDirection ABaseCharacter::ComputeWheelDirection(const FVector2D& AccumulatedDelta) const
+{
+    if (AccumulatedDelta.Size() < PingWheelDeadzone)
+    {
+        return EPingWheelDirection::None;
+    }
+
+    const float AbsX = FMath::Abs(AccumulatedDelta.X);
+    const float AbsY = FMath::Abs(AccumulatedDelta.Y);
+
+    if (AbsY >= AbsX)
+    {
+        return (AccumulatedDelta.Y > 0.0f) ? EPingWheelDirection::Up : EPingWheelDirection::Down;
+    }
+
+    return (AccumulatedDelta.X > 0.0f) ? EPingWheelDirection::Right : EPingWheelDirection::Left;
+}
+
+EStarterPingType ABaseCharacter::DirectionToPingType(EPingWheelDirection Direction) const
+{
+    switch (Direction)
+    {
+    case EPingWheelDirection::Up:
+        return EStarterPingType::Enemy;
+    case EPingWheelDirection::Right:
+        return EStarterPingType::Defend;
+    case EPingWheelDirection::Down:
+    default:
+        return EStarterPingType::Location;
+    }
+}
+
+void ABaseCharacter::SetWheelDirection(EPingWheelDirection NewDirection)
+{
+    if (PingWheelDirection == NewDirection)
+    {
+        return;
+    }
+
+    PingWheelDirection = NewDirection;
+
+    if (PingWheelWidget)
+    {
+        PingWheelWidget->BP_SetHighlightedDirection(PingWheelDirection);
+    }
+}
+
+void ABaseCharacter::OpenPingWheelUI()
+{
+    if (!PingWheelWidgetClass)
+    {
+        return;
+    }
+
+    if (!PingWheelWidget)
+    {
+        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            PingWheelWidget = CreateWidget<UPingWheelWidget>(PC, PingWheelWidgetClass);
+        }
+    }
+
+    if (PingWheelWidget && !PingWheelWidget->IsInViewport())
+    {
+        PingWheelWidget->AddToViewport();
+        PingWheelWidget->BP_SetHighlightedDirection(PingWheelDirection);
+    }
+}
+
+void ABaseCharacter::ClosePingWheelUI()
+{
+    if (PingWheelWidget && PingWheelWidget->IsInViewport())
+    {
+        PingWheelWidget->RemoveFromParent();
+    }
+}
+
+void ABaseCharacter::Server_SpawnPing_Implementation(FVector HitLocation, FVector HitNormal, ETeam PingTeam, EStarterPingType PingType)
 {
     if (!PingActorClass) return;
 
@@ -422,6 +556,7 @@ void ABaseCharacter::Server_SpawnPing_Implementation(FVector HitLocation, FVecto
     {
         // Assign the TeamID to the Ping so it knows who to replicate to
         NewPing->TeamID = PingTeam;
+        NewPing->PingType = PingType;
 
         // Destroy the ping after 5 seconds
         NewPing->SetLifeSpan(5.0f);
