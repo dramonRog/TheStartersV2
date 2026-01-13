@@ -15,12 +15,17 @@ APingMarker::APingMarker()
     bOnlyRelevantToOwner = false;
 }
 
+void APingMarker::RefreshVisuals()
+{
+    BP_OnPingTypeChanged(PingType);
+}
+
 void APingMarker::BeginPlay()
 {
     Super::BeginPlay();
 
     // Initialize visuals for server + locally spawned instances.
-    BP_OnPingTypeChanged(PingType);
+    RefreshVisuals();
 }
 
 void APingMarker::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -28,15 +33,15 @@ void APingMarker::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     
     // Register a variable for replication
-    // COND_InitialOnly is a good optimization if TeamID does not change after spawn.
-    // If it can change, just use DOREPLIFETIME.
-    DOREPLIFETIME_CONDITION(APingMarker, TeamID, COND_InitialOnly);
-    DOREPLIFETIME_CONDITION(APingMarker, PingType, COND_InitialOnly);
+    // These are assigned right after spawn; using unconditional replication avoids edge cases
+    // where InitialOnly could miss late assignment on some network paths.
+    DOREPLIFETIME(APingMarker, TeamID);
+    DOREPLIFETIME(APingMarker, PingType);
 }
 
 void APingMarker::OnRep_PingType()
 {
-    BP_OnPingTypeChanged(PingType);
+    RefreshVisuals();
 }
 
 // Filtering: This code is executed ONLY ON THE SERVER for each client

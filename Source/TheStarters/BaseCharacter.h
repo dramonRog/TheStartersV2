@@ -72,6 +72,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -152,6 +153,7 @@ protected:
     // --- PING WHEEL STATE (local only) ---
     bool bPingWheelActive = false;
     FVector2D PingWheelAccumulatedDelta = FVector2D::ZeroVector;
+    FVector2D PingWheelDeltaOrigin = FVector2D::ZeroVector;
     EPingWheelDirection PingWheelDirection = EPingWheelDirection::None;
 
     UPROPERTY(Transient)

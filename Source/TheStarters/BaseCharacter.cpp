@@ -134,6 +134,15 @@ void ABaseCharacter::BeginPlay()
     EquipDefaultWeapon();
 }
 
+void ABaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    // Ensure we don't leak UI widgets across PIE end / blueprint reinstancing.
+    bPingWheelActive = false;
+    ClosePingWheelUI();
+
+    Super::EndPlay(EndPlayReason);
+}
+
 // Called every frame
 void ABaseCharacter::Tick(float DeltaTime)
 {
@@ -200,16 +209,30 @@ void ABaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
     if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
-        EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Move);
-        EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &ABaseCharacter::StartSprint);
-        EnhancedInput->BindAction(SprintAction, ETriggerEvent::Completed, this, &ABaseCharacter::StopSprint);
-        EnhancedInput->BindAction(SpecialAbilityAction, ETriggerEvent::Started, this, &ABaseCharacter::SpecialAbility);
-        EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Look);
-        EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-        EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-        EnhancedInput->BindAction(PingAction, ETriggerEvent::Started, this, &ABaseCharacter::PingWheelStarted);
-        EnhancedInput->BindAction(PingAction, ETriggerEvent::Completed, this, &ABaseCharacter::PingWheelCompleted);
-        EnhancedInput->BindAction(PingAction, ETriggerEvent::Canceled, this, &ABaseCharacter::PingWheelCanceled);
+        if (MoveAction) { EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Move); }
+        if (SprintAction)
+        {
+            EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &ABaseCharacter::StartSprint);
+            EnhancedInput->BindAction(SprintAction, ETriggerEvent::Completed, this, &ABaseCharacter::StopSprint);
+        }
+        if (SpecialAbilityAction) { EnhancedInput->BindAction(SpecialAbilityAction, ETriggerEvent::Started, this, &ABaseCharacter::SpecialAbility); }
+        if (LookAction) { EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Look); }
+        if (JumpAction)
+        {
+            EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+            EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+        }
+
+        if (PingAction)
+        {
+            EnhancedInput->BindAction(PingAction, ETriggerEvent::Started, this, &ABaseCharacter::PingWheelStarted);
+            EnhancedInput->BindAction(PingAction, ETriggerEvent::Completed, this, &ABaseCharacter::PingWheelCompleted);
+            EnhancedInput->BindAction(PingAction, ETriggerEvent::Canceled, this, &ABaseCharacter::PingWheelCanceled);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter: PingAction is not set on %s (Class Defaults). Ping wheel will not work."), *GetName());
+        }
     }
 }
 
@@ -300,8 +323,11 @@ void ABaseCharacter::Look(const FInputActionValue& Value)
     // When ping wheel is active, interpret mouse delta as radial direction input (no camera movement).
     if (bPingWheelActive)
     {
+        // Accumulate total delta, but compute direction relative to the last selection "origin"
+        // so it feels easy to switch between directions (no need to "undo" previous movement).
         PingWheelAccumulatedDelta += LookAxis;
-        SetWheelDirection(ComputeWheelDirection(PingWheelAccumulatedDelta));
+        const FVector2D RelativeDelta = PingWheelAccumulatedDelta - PingWheelDeltaOrigin;
+        SetWheelDirection(ComputeWheelDirection(RelativeDelta));
         return;
     }
 
@@ -383,6 +409,7 @@ void ABaseCharacter::PingWheelStarted(const FInputActionValue& Value)
 
     bPingWheelActive = true;
     PingWheelAccumulatedDelta = FVector2D::ZeroVector;
+    PingWheelDeltaOrigin = FVector2D::ZeroVector;
     SetWheelDirection(EPingWheelDirection::None);
     OpenPingWheelUI();
 }
@@ -502,6 +529,13 @@ void ABaseCharacter::SetWheelDirection(EPingWheelDirection NewDirection)
 
     PingWheelDirection = NewDirection;
 
+    // When the user crosses into a new direction, "re-center" the accumulator origin.
+    // This makes it much easier to move from one sign to another.
+    if (PingWheelDirection != EPingWheelDirection::None)
+    {
+        PingWheelDeltaOrigin = PingWheelAccumulatedDelta;
+    }
+
     if (PingWheelWidget)
     {
         PingWheelWidget->BP_SetHighlightedDirection(PingWheelDirection);
@@ -513,6 +547,12 @@ void ABaseCharacter::OpenPingWheelUI()
     if (!PingWheelWidgetClass)
     {
         return;
+    }
+
+    // If the widget BP was recompiled (REINST_), our cached instance can become unsafe.
+    if (PingWheelWidget && PingWheelWidget->GetClass() != PingWheelWidgetClass)
+    {
+        ClosePingWheelUI();
     }
 
     if (!PingWheelWidget)
@@ -532,9 +572,11 @@ void ABaseCharacter::OpenPingWheelUI()
 
 void ABaseCharacter::ClosePingWheelUI()
 {
-    if (PingWheelWidget && PingWheelWidget->IsInViewport())
+    if (PingWheelWidget)
     {
+        // RemoveFromParent is safe even if not currently in viewport.
         PingWheelWidget->RemoveFromParent();
+        PingWheelWidget = nullptr;
     }
 }
 
@@ -557,6 +599,8 @@ void ABaseCharacter::Server_SpawnPing_Implementation(FVector HitLocation, FVecto
         // Assign the TeamID to the Ping so it knows who to replicate to
         NewPing->TeamID = PingTeam;
         NewPing->PingType = PingType;
+        NewPing->RefreshVisuals();
+        NewPing->ForceNetUpdate();
 
         // Destroy the ping after 5 seconds
         NewPing->SetLifeSpan(5.0f);

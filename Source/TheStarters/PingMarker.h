@@ -28,6 +28,11 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Ping")
     void BP_OnPingTypeChanged(EStarterPingType NewType);
 
+    // Call this after changing PingType on the server, so visuals update immediately
+    // (OnRep only runs on clients).
+    UFUNCTION(BlueprintCallable, Category = "Ping")
+    void RefreshVisuals();
+
     // Override this to filter visibility
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
 
