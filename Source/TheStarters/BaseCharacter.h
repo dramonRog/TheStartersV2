@@ -64,6 +64,9 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Ping")
     TSubclassOf<class APingMarker> PingActorClass;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Ping")
+    TMap<EPingWheelDirection, EStarterPingType> PingMapping;
+
     UPROPERTY(EditDefaultsOnly, Category = "Ping|UI")
     TSubclassOf<class UPingWheelWidget> PingWheelWidgetClass;
 

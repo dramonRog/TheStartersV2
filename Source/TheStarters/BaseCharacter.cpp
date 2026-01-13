@@ -53,6 +53,11 @@ ABaseCharacter::ABaseCharacter()
     GetCharacterMovement()->MaxAcceleration = 2048.0f;
     GetCharacterMovement()->Mass = 120.f;
 
+    // Initialize Ping Mapping defaults
+    PingMapping.Add(EPingWheelDirection::Up, EStarterPingType::Enemy);
+    PingMapping.Add(EPingWheelDirection::Right, EStarterPingType::Defend);
+    PingMapping.Add(EPingWheelDirection::Down, EStarterPingType::Location);
+    PingMapping.Add(EPingWheelDirection::Left, EStarterPingType::Location); 
 }
 
 // Called when the game starts or when spawned
@@ -327,6 +332,15 @@ void ABaseCharacter::Look(const FInputActionValue& Value)
         // so it feels easy to switch between directions (no need to "undo" previous movement).
         PingWheelAccumulatedDelta += LookAxis;
         const FVector2D RelativeDelta = PingWheelAccumulatedDelta - PingWheelDeltaOrigin;
+        
+        // DEBUG: Print delta values to screen to help debug input
+        if (GEngine)
+        {
+             FString DebugMsg = FString::Printf(TEXT("Ping Input: X=%.2f Y=%.2f | Acc: X=%.2f Y=%.2f"), 
+                 LookAxis.X, LookAxis.Y, RelativeDelta.X, RelativeDelta.Y);
+             GEngine->AddOnScreenDebugMessage(991, 0.1f, FColor::Yellow, DebugMsg);
+        }
+
         SetWheelDirection(ComputeWheelDirection(RelativeDelta));
         return;
     }
@@ -432,6 +446,15 @@ void ABaseCharacter::PingWheelCompleted(const FInputActionValue& Value)
     }
 
     TrySpawnPing(DirectionToPingType(FinalDirection));
+    
+    // Debug result
+    EStarterPingType SelectedType = DirectionToPingType(FinalDirection);
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, 
+            FString::Printf(TEXT("Ping Spawn: Dir=%s Type=%s"), 
+            *UEnum::GetValueAsString(FinalDirection), *UEnum::GetValueAsString(SelectedType)));
+    }
 }
 
 void ABaseCharacter::PingWheelCanceled(const FInputActionValue& Value)
@@ -508,16 +531,13 @@ EPingWheelDirection ABaseCharacter::ComputeWheelDirection(const FVector2D& Accum
 
 EStarterPingType ABaseCharacter::DirectionToPingType(EPingWheelDirection Direction) const
 {
-    switch (Direction)
+    if (const EStarterPingType* FoundType = PingMapping.Find(Direction))
     {
-    case EPingWheelDirection::Up:
-        return EStarterPingType::Enemy;
-    case EPingWheelDirection::Right:
-        return EStarterPingType::Defend;
-    case EPingWheelDirection::Down:
-    default:
-        return EStarterPingType::Location;
+        return *FoundType;
     }
+    
+    // Default fallback
+    return EStarterPingType::Location;
 }
 
 void ABaseCharacter::SetWheelDirection(EPingWheelDirection NewDirection)
@@ -529,12 +549,6 @@ void ABaseCharacter::SetWheelDirection(EPingWheelDirection NewDirection)
 
     PingWheelDirection = NewDirection;
 
-    // When the user crosses into a new direction, "re-center" the accumulator origin.
-    // This makes it much easier to move from one sign to another.
-    if (PingWheelDirection != EPingWheelDirection::None)
-    {
-        PingWheelDeltaOrigin = PingWheelAccumulatedDelta;
-    }
 
     if (PingWheelWidget)
     {
